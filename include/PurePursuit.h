@@ -11,6 +11,8 @@
 #include <geometry_msgs/PointStamped.h>
 #include <geometry_msgs/Twist.h>
 
+#include <tf/transform_listener.h>
+
 class PPControl {
     public:
         // Constructor
@@ -21,11 +23,23 @@ class PPControl {
     private:
         // Obtención de la trayectoria
         void getPath(const nav_msgs::Path &path);
+        void getOdom(const nav_msgs::Odometry& odom);
+        void timerCallback(const ros::TimerEvent& event);
 
         ros::NodeHandle _nh;
         ros::Subscriber _pathSub;
+        ros::Subscriber _odomSub;
         ros::Publisher _cmdVelPub;
+
+        std::string _pathTopic;
+        std::string _odomTopic;
+        std::string _cmdVelTopic;
+
+        tf::TransformListener _tfListener;
+        ros::Timer _timer;
+
         double _velocity;
+        double _controlfreq;
         int _index;
         bool _recorrido;
         nav_msgs::Path _path;    
