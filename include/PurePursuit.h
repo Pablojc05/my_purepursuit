@@ -42,7 +42,16 @@ class PPControl {
         double _controlfreq;
         int _index;
         bool _recorrido;
-        nav_msgs::Path _path;    
+
+        // Variables relacionadas con el path actual
+        nav_msgs::Path _cpath;
+        std::string _pathFrameid;
+        int _pathlength;
+        geometry_msgs::Pose _cpathFinalPose;
+
+        geometry_msgs::Twist _cVel;
+        geometry_msgs::PoseStamped _cPose;
+
 };
 
 #endif
