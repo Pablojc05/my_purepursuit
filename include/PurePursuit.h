@@ -25,6 +25,9 @@ class PPControl {
         void getPath(const nav_msgs::Path &path);
         void getOdom(const nav_msgs::Odometry& odom);
         void timerCallback(const ros::TimerEvent& event);
+        geometry_msgs::PoseStamped getPose();
+        double getPoseDist(const geometry_msgs::PoseStamped& pose);
+        int getWayPoint();
 
         ros::NodeHandle _nh;
         ros::Subscriber _pathSub;

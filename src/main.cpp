@@ -1,4 +1,4 @@
-#include "include/PurePursuit.h"
+#include "PurePursuit.h"
 
 int main(int argc, char **argv)
 {
