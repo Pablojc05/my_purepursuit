@@ -4,7 +4,7 @@
 
     // Constructor
     PPControl::PPControl(ros::NodeHandle& nh):
-     _nh("~"), _nextWP(0), _meta(true), _velmax(0.1), _velocity(_velmax){
+     _nh("~"), _nextWP(0), _meta(true), _velmax(0.1), _velocity(_velmax), _tfListener(_tfBuffer){
         getParameters();
     }
 
@@ -27,11 +27,15 @@
 
     void PPControl::spin(){
 
+        _tfLookahead.header.frame_id = _robotFrameid;
+        _tfLookahead.child_frame_id = _ldFrameid;
+        
         /* Inicializo los suscriptores y el publicador */
         _pathSub = _nh.subscribe(_pathTopic,1,&PPControl::getPath,this);
         _odomSub = _nh.subscribe(_odomTopic,1,&PPControl::getOdom,this);
         _cmdVelPub = _nh.advertise<geometry_msgs::Twist>(_cmdVelTopic, 1);
 
+        /* Establezco el servidor para la configuracion dinamica de los parametros */
         dynamic_reconfigure::Server<pure_pursuit::PurePursuitConfig> server;
         dynamic_reconfigure::Server<pure_pursuit::PurePursuitConfig>::CallbackType f;
         f = boost::bind(&PPControl::configcallback, this, _1, _2);
@@ -145,10 +149,11 @@
 
     geometry_msgs::TransformStamped PPControl::getTF_BLMap(){
         
-        tf2_ros::TransformListener tfListener(_tfBuffer);
         geometry_msgs::TransformStamped tfGeom;
+        std::string* error; 
         try{
-            tfGeom = _tfBuffer.lookupTransform(_mapFrameid, _robotFrameid, ros::Time(0));
+            bool tf_found = _tfBuffer.canTransform(_mapFrameid, _robotFrameid, ros::Time(0), ros::Duration(1.5), error);
+            if (tf_found)   tfGeom = _tfBuffer.lookupTransform(_mapFrameid, _robotFrameid, ros::Time(0));
         }
         
         catch (tf2::TransformException &ex) {
@@ -235,56 +240,5 @@
                                _tfLookahead.transform.rotation.w);
 
     }
-
-    // void PPControl::timerCallback(const ros::TimerEvent& event){
-        
-    // }
-
-    // geometry_msgs::PoseStamped PPControl::getPose(){
-
-    //     geometry_msgs::PoseStamped tfPose;
-
-    //     // Intentamos transformar la pose actual al frame_id del path
-    //     try {
-    //         // La pose transformada tendra ya dicho frame_id
-	// 	    _tfListener.transformPose(_pathFrameid, _cPose, tfPose);
-    //     }
-
-    //     // Si falla lanzamos una excepcion
-    //     catch (tf::TransformException& exception) {
-    //         ROS_ERROR_STREAM("Error en PPControl::getPose: " << 
-    //         exception.what());
-    //     }
-
-    //     return tfPose;
-    // }
-
-
-    // double PPControl::getPoseDist(const geometry_msgs::PoseStamped& pose){
-
-    //     geometry_msgs::PoseStamped origen = getPose();
-    //     geometry_msgs::PoseStamped tfPose; 
-
-    //     // Intentamos transformar la pose que recibe como argumento al frame_id del path
-    //     try {
-    //         // La pose transformada tendra ya dicho frame_id
-	// 	    _tfListener.transformPose(_pathFrameid, _cPose, tfPose);
-    //     }
-
-    //     // Si falla lanzamos una excepcion
-    //     catch (tf::TransformException& exception) {
-    //         ROS_ERROR_STREAM("Error en PPControl::getPoseDist: " << 
-    //         exception.what());
-    //         return -1;
-    //     }
-
-    //     /* Calculamos la distancia desde la pose origen (la actual) hasta
-    //        la pose que acabamos de transformar mediante vectores que contienen
-    //        las coordenadas (x,y,z) de cada pose */  
-    //     tf::Vector3 org(origen.pose.position.x, origen.pose.position.y, origen.pose.position.z);
-    //     tf::Vector3 dest(tfPose.pose.position.x,tfPose.pose.position.y, tfPose.pose.position.z);
-
-    //     return tf::tfDistance(org,dest);
-    // }
 
 

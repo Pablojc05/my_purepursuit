@@ -119,6 +119,7 @@ class PPControl {
         
         /* Buffer de tfs para buscar la tf entre base_link y map */
         tf2_ros::Buffer _tfBuffer;
+        tf2_ros::TransformListener _tfListener;
         tf2_ros::TransformBroadcaster _tfBroadcaster;
 
         /* Transformadas de tipo mensaje stamped para el punto lookahead
