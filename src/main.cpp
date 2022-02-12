@@ -12,10 +12,9 @@ int main(int argc, char **argv)
       return EXIT_FAILURE;
    }
 
-   ros::NodeHandle n;
-   // n.param();
-
-   
+   ros::NodeHandle n("~");
+   PPControl controller(n);
+   controller.spin();
 
    ROS_INFO("[%s] Node finished.", ros::this_node::getName().data());
 

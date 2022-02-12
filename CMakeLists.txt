@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(my_purepursuit)
+project(pure_pursuit)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 add_compile_options(-std=c++11)
@@ -14,11 +14,13 @@ find_package(catkin REQUIRED COMPONENTS
   tf2
   tf2_ros
   tf2_geometry_msgs
-  visualization_msgs
+  dynamic_reconfigure
 )
 
+generate_dynamic_reconfigure_options(cfg/*.cfg)
+
 catkin_package(
-  CATKIN_DEPENDS geometry_msgs nav_msgs roscpp tf2 tf2_geometry_msgs tf2_ros visualization_msgs 
+  CATKIN_DEPENDS geometry_msgs nav_msgs roscpp tf2 tf2_geometry_msgs tf2_ros dynamic_reconfigure
   INCLUDE_DIRS include
   )
 
@@ -31,3 +33,4 @@ add_dependencies(${PROJECT_NAME}_lib ${catkin_EXPORTED_TARGETS})
 
 add_executable(${PROJECT_NAME}_node src/main.cpp)
 target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME}_lib)
+add_dependencies(${PROJECT_NAME}_node ${PROJECT_NAME}_gencfg)

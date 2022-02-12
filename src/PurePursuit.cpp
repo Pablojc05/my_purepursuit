@@ -3,14 +3,46 @@
 
 
     // Constructor
-    PPControl::PPControl(const ros::NodeHandle &nh): _nh(nh), _nextWP(-1){
-        _pathSub = _nh.subscribe(_pathTopic,1,&PPControl::getPath,this); // "/move_base/TrajectoryPlannerROS/local_plan"
-        _odomSub = _nh.subscribe(_odomTopic,1,&PPControl::getOdom,this);
-        _cmdVelPub = _nh.advertise<geometry_msgs::Twist>(_cmdVelTopic, 1);
-        // _timer = _nh.createTimer(ros::Duration(1.0/_controlfreq),&PPControl::timerCallback, this);
+    PPControl::PPControl(ros::NodeHandle& nh):
+     _nh("~"), _nextWP(0), _meta(true), _velmax(0.1), _velocity(_velmax){
+        getParameters();
     }
 
-    PPControl::~PPControl(){};
+    PPControl::~PPControl(){}
+
+    void PPControl::getParameters(){
+
+        _nh.param<double>("distancia_lookahead", _ld, 1.0);
+        _nh.param<double>("vel_angular_max", _w_max, 1.0);
+        // _nh.param<double>("vel_linear_max", _velmax, 0.1); // Sera configurable a tiempo real
+        _nh.param<double>("tolerancia_posicion", _posTolerance, 0.1);
+        _nh.param<std::string>("path_topic", _pathTopic, "/move_base/SBPLLatticePlanner/plan");
+        _nh.param<std::string>("odom_topic", _odomTopic, "/steer_bot/odom");
+        _nh.param<std::string>("cmdVel_topic", _cmdVelTopic, "/purepursuit/cmd_vel");
+        _nh.param<std::string>("map_frameid", _mapFrameid, "map");
+        _nh.param<std::string>("robot_frameid", _robotFrameid, "base_link");
+        _nh.param<std::string>("lookahead_frameid", _ldFrameid, "lookahead");
+
+    }
+
+    void PPControl::spin(){
+
+        /* Inicializo los suscriptores y el publicador */
+        _pathSub = _nh.subscribe(_pathTopic,1,&PPControl::getPath,this);
+        _odomSub = _nh.subscribe(_odomTopic,1,&PPControl::getOdom,this);
+        _cmdVelPub = _nh.advertise<geometry_msgs::Twist>(_cmdVelTopic, 1);
+
+        dynamic_reconfigure::Server<pure_pursuit::PurePursuitConfig> server;
+        dynamic_reconfigure::Server<pure_pursuit::PurePursuitConfig>::CallbackType f;
+        f = boost::bind(&PPControl::configcallback, this, _1, _2);
+        server.setCallback(f);
+        ros::spin();
+    }
+
+    void PPControl::configcallback(pure_pursuit::PurePursuitConfig &config, uint32_t level){
+        ROS_INFO("Reconfigure Request: %f", config.vel_linear_max);
+        if(level==0) _velmax = config.vel_linear_max;
+    }
 
     void PPControl::getPath(const nav_msgs::Path &path){
 
@@ -25,11 +57,11 @@
             // Comprobamos que la trayectoria no esté vacía
             if (_pathlength>0){
                 _meta=false;
-                // Obtengo el primer punto con el que empezará el algoritmo
+                std::cout << "Trayectoria valida iniciada" << std::endl;
             }
             else{
                 _meta=true;
-                ROS_WARN_STREAM("Trayectoria vacía, ingrese nueva trayectoria");
+                ROS_WARN_STREAM("Trayectoria vacia, ingrese nueva trayectoria");
             }
         }
         else    ROS_WARN_STREAM("El frame_id del path debe ser " << _mapFrameid << 
@@ -45,6 +77,7 @@
         // // Guardo la velocidad actual dada por la odometría
         // _cVel=odom.twist.twist;
 
+        /* En vez de usar la odometria directamente se trabajara con el arbol de tfs */
         
         _tf_BLMap = getTF_BLMap();
         int wp = getWayPoint();
@@ -101,6 +134,10 @@
             _cmdVel.linear.x = 0.0;
             _cmdVel.angular.z = 0.0;
         }
+
+        /* Publicamos la transformada del punto lookahead*/
+        _tfLookahead.header.stamp = ros::Time::now();
+        _tfBroadcaster.sendTransform(_tfLookahead);
 
         /* Finalmente publicamos las velocidades linear y angular */
         _cmdVelPub.publish(_cmdVel);

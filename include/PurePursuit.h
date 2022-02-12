@@ -12,26 +12,47 @@
 #include <geometry_msgs/PointStamped.h>
 #include <geometry_msgs/Twist.h>
 
-#include <tf/transform_listener.h>
 #include <tf2_ros/transform_listener.h>
+#include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <tf2/LinearMath/Transform.h>
 #include <tf2/transform_datatypes.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_kdl/tf2_kdl.h>
 
+#include <dynamic_reconfigure/server.h>
+#include <pure_pursuit/PurePursuitConfig.h>
+
 class PPControl {
     public:
         // Constructor
-        PPControl(const ros::NodeHandle &nh);
+        PPControl(ros::NodeHandle& nh);
         // Destructor
-        virtual ~PPControl();template<typename A, typename B>
+        virtual ~PPControl();
+
+        /* ----- spin -----*/
+        /// \brief Funcion para iniciar los suscriptores y publicadores, lanzar la configuracion dinamica
+        /// y ejecutar el nodo.
+
+        void spin();
         
+        template<typename A, typename B>
         double getDistance(A punto1, B punto2){
             return sqrt(pow(punto1.x - punto2.x,2) + pow(punto1.y - punto2.y,2) + pow(punto1.z - punto2.z,2));
         }
 
+
     private:
+
+        /* ----- getParameters -----*/
+        /// \brief Funcion para obtener del servidor de parametros los que nos interesan.
+
+        void getParameters();
+
+        /* ----- configcallback -----*/
+        /// \brief Funcion para modificar en tiempo real los parametros que nos interesan.
+
+        void configcallback(pure_pursuit::PurePursuitConfig &config, uint32_t level);
 
         /* ----- getPath -----*/
         /// \brief Funcion de tipo callback que sera llamada cada vez que se reciba un path con formato nav_msgs::Path.
@@ -93,10 +114,12 @@ class PPControl {
         std::string _robotFrameid;
         std::string _pathFrameid;
         std::string _mapFrameid;
+        std::string _ldFrameid;
 
-        // tf::TransformListener _tfListener;
+        
         /* Buffer de tfs para buscar la tf entre base_link y map */
         tf2_ros::Buffer _tfBuffer;
+        tf2_ros::TransformBroadcaster _tfBroadcaster;
 
         /* Transformadas de tipo mensaje stamped para el punto lookahead
          y la transformada entre los frames base_link y map */
@@ -106,12 +129,12 @@ class PPControl {
         ros::Timer _timer;
 
         double _velocity; // Velocidad linear que seguira el robot
-        // double _controlfreq;
-        // int _index;
+        double _velmax; // Velocidad linear maxima configurable
+        double _w_max; // Velocidad angular maxima predefinida
+        
         bool _meta; // Variable para indicar si se ha llegado a la meta o no
         int _nextWP; // Almacena el siguiente waypoint que seguira el robot
-        double _w_max; // Velocidad angular maxima predefinida
-
+        
         double _ld; // Distancia lookahead
         double _posTolerance; // Tolerancia de posicion en el eje x para considerar la llegada o no a la meta
 
