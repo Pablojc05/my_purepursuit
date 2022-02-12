@@ -152,8 +152,9 @@
         geometry_msgs::TransformStamped tfGeom;
         std::string* error; 
         try{
-            bool tf_found = _tfBuffer.canTransform(_mapFrameid, _robotFrameid, ros::Time(0), ros::Duration(1.5), error);
+            bool tf_found = _tfBuffer.canTransform(_mapFrameid, _robotFrameid, ros::Time(0), ros::Duration(3), error);
             if (tf_found)   tfGeom = _tfBuffer.lookupTransform(_mapFrameid, _robotFrameid, ros::Time(0));
+            else    std::cout << "Error: " << *error << std::endl;
         }
         
         catch (tf2::TransformException &ex) {
