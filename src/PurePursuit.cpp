@@ -7,7 +7,7 @@
         _pathSub = _nh.subscribe(_pathTopic,1,&PPControl::getPath,this); // "/move_base/TrajectoryPlannerROS/local_plan"
         _odomSub = _nh.subscribe(_odomTopic,1,&PPControl::getOdom,this);
         _cmdVelPub = _nh.advertise<geometry_msgs::Twist>(_cmdVelTopic, 1);
-        _timer = _nh.createTimer(ros::Duration(1.0/_controlfreq),&PPControl::timerCallback, this);
+        // _timer = _nh.createTimer(ros::Duration(1.0/_controlfreq),&PPControl::timerCallback, this);
     }
 
     PPControl::~PPControl(){};
@@ -24,11 +24,11 @@
 
             // Comprobamos que la trayectoria no esté vacía
             if (_pathlength>0){
-                _recorrido=false;
+                _meta=false;
                 // Obtengo el primer punto con el que empezará el algoritmo
             }
             else{
-                _recorrido=true;
+                _meta=true;
                 ROS_WARN_STREAM("Trayectoria vacía, ingrese nueva trayectoria");
             }
         }
@@ -39,17 +39,71 @@
 
     void PPControl::getOdom(const nav_msgs::Odometry& odom){
 
-        // Guardo los campos cabecera y pose de la odometria actual
-        _cPose.header=odom.header;
-        _cPose.pose=odom.pose.pose;
-        // Guardo la velocidad actual dada por la odometría
-        _cVel=odom.twist.twist;
+        // // Guardo los campos cabecera y pose de la odometria actual
+        // _cPose.header=odom.header;
+        // _cPose.pose=odom.pose.pose;
+        // // Guardo la velocidad actual dada por la odometría
+        // _cVel=odom.twist.twist;
 
         
         _tf_BLMap = getTF_BLMap();
+        int wp = getWayPoint();
 
+        /* Si el path no esta vacio y el waypoint obtenido sobrepasa los limites de tamaño del path 
+        significa que no se ha encontrado ningun wp cuya distancia con respecto al robot sea mayor
+        que la distancia lookahead. O lo que es lo mismo, significa que nos estamos acercando a la
+        meta (punto final) que esta a menor distancia que la lookahead */
+        if (!_cpath.poses.empty() && wp >= _pathlength){
 
+            /* La pose de la meta la paso del frame map al frame BL */
+            KDL::Frame F_goal_BL = getFrame_MapBL(_cpathFinalPose);
+            geometry_msgs::Pose pose_goal_BL = tf2::toMsg(F_goal_BL);
 
+            /* Si la posicion de la meta es menor que una determinada tolerancia medida en el eje x del robot,
+            significara que hemos llegado a nuestro destino y reseteamos el path */
+            if (fabs(pose_goal_BL.position.x) <= _posTolerance){
+                _meta = true;
+                _cpath = nav_msgs::Path();
+            }
+            /* Si no se ha llegado modificamos la tf del lookahead para que apunte al wp obtenido*/ 
+            else{
+                computeNewLookahead_tf(F_goal_BL);
+            }
+        }
+
+        /* Si aun no se ha llegado a la meta calculamos las nuevas velocidades para que el robot siga avanzando
+        hacia el siguiente waypoint */
+        if (!_meta){
+
+            /* Calculamos el error lateral que viene siendo la coordenada Y del punto lookahead
+             en el frame de base_link */
+            double error_lat = _tfLookahead.transform.translation.y;
+
+            /* Calculamos la velocidad angular cuya formula ha seguido el siguiente desarrollo: 
+            El error lateral viene dado por e = ld*sin(alpha) y la curvatura (inversa del radio)
+            viene dada por k = 2*sin(alpha)/ld. Sustituyendo el seno del error en el de la curvatura
+            podemos obtener que k = (2*e)/ ld². Por tanto, w = v/R = v*k = (2*v*e) / ld² . */
+            double w = (2 * _velocity * error_lat)/ (_ld*_ld);
+
+            /* La velocidad angular que publiquemos sera el minimo entre la calculada y una w maxima predefinida */
+            _cmdVel.angular.z = std::min(w, _w_max);
+
+            /* Establecemos la velocidad linear con la que avanzara el robot */
+            _cmdVel.linear.x = _velocity;
+        }
+
+        /* Si en cambio se ha llegado a la meta pararemos el robot y resetearemos el punto del lookahead */
+        else{
+            
+            _tfLookahead.transform = geometry_msgs::Transform();
+            _tfLookahead.transform.rotation.w = 1.0;
+
+            _cmdVel.linear.x = 0.0;
+            _cmdVel.angular.z = 0.0;
+        }
+
+        /* Finalmente publicamos las velocidades linear y angular */
+        _cmdVelPub.publish(_cmdVel);
     }
 
     geometry_msgs::TransformStamped PPControl::getTF_BLMap(){
@@ -67,94 +121,133 @@
         return tfGeom;
     }
 
-    void PPControl::getPose_MapBL(const geometry_msgs::Pose& pose_map){
+    KDL::Frame PPControl::getFrame_MapBL(const geometry_msgs::Pose& pose_map){
         
-        geometry_msgs::TransformStamped tfGeom;
-        // probar con tf2::transform 
-        // tf2::Transform tf;
-        // tf.setRotation(tf2::Quaternion(pose_map.orientation.x, pose_map.orientation.y, pose_map.orientation.z, pose_map.orientation.w));
-        // tf.setOrigin(tf2::Vector3(pose_map.position.x, pose_map.position.y, pose_map.position.z));
-        // tf2::Transform tf;
-        // tf.setRotation(tf2::Quaternion(_tf_BLMap.transform.rotation.x, _tf_BLMap.transform.rotation.y, _tf_BLMap.transform.rotation.z, _tf_BLMap.transform.rotation.w));
-        // tf.setOrigin(tf2::Vector3(_tf_BLMap.transform.translation.x, _tf_BLMap.transform.translation.y, _tf_BLMap.transform.translation.z));
-        tf2::Stamped<tf2::Transform> tf;
-        tf2::fromMsg(_tf_BLMap, tf);
-        
-        
-        // tf.inverse()
-        // return tfGeom;
+        /* Convertimos la transformada _tf_BLMap y la pose con respecto al mapa que le pasamos como argumento
+        a un tipo de dato de la librería KDL para operar mejor con ellas */
+        KDL::Frame Frame_pose_Map;
+        KDL::Frame Frame_tf = tf2::transformToKDL(_tf_BLMap);
+        tf2::fromMsg(pose_map, Frame_pose_Map);
+
+        /* Aplicamos la inversa a la tf para que ahora sea de map a base_link y la multiplicamos por la pose dada
+        para obtener así una pose con respecto a base_link */
+        KDL::Frame Frame_pose_BL = Frame_tf.Inverse()*Frame_pose_Map;          
+        // geometry_msgs::Pose pose_BL = tf2::toMsg(Frame_pose_BL);
+
+        return Frame_pose_BL;
     }
 
     int PPControl::getWayPoint(){
 
-        // if (!_cpath.poses.empty()){
-        //     int wp = 0;
-        //     /* Inicializo la distancia minima a la distancia desde
-        //     la pose actual hasta la primera pose del path actual */
-        //     double dist_min = getPoseDist(_cpath.poses.front());
-
-        // }
-
         geometry_msgs::Vector3 pos_robot = _tf_BLMap.transform.translation;
+        int next_wp = 0;
 
+        /* Recorro todos los elementos del path y aquel cuya distancia con respecto a la pose
+        del robot sea mayor que la distancia del lookahead será el siguiente waypoint al que llegar */
         for (int i=0; i < _cpath.poses.size(); i++){
             geometry_msgs::Point pos_wp = _cpath.poses[i].pose.position;
             
             if (getDistance(pos_wp, pos_robot) > _ld){
 
+                /* Paso la transformada del lookahead que estaba en el frame map al frame base_link
+                para luego poder medir el error lateral */
+                KDL::Frame F_lookahead_BL = getFrame_MapBL(_cpath.poses[i].pose);
+                _tfLookahead = tf2::kdlToTransform(F_lookahead_BL);
+
+                break;
             }
         }
+        return next_wp;
     }
 
-    void PPControl::timerCallback(const ros::TimerEvent& event){
+    void PPControl::computeNewLookahead_tf (const KDL::Frame& F_goal){
+
+        /* Obtengo los angulos RPY de la pose de la meta */
+        double roll, pitch, yaw;
+        F_goal.M.GetRPY(roll, pitch, yaw);
+
+        /* El vector origen de la nueva transformada de la distancia lookahead se obtendrá tras
+        calcular la intersección entre el circulo de radio la distancia ld y la linea definida
+        por la ultima pose del path */
+
+        /* Calculo primero las componentes necesarias para la ec. de la recta y - y0 = m*(x-x0)
+        siendo y=ld_y, y0=y_posefinal, x=ld_x y por ultimo x0=x_posefinal */
+        double m = tan(yaw); // Pendiente de dicha recta
+
+        /* Extracto de la recta que pasa por el punto (x_posefinal, y_posefinal) con pendiente m
+         -> y_pfin - m*x_pfin */
+        double r_pfin =  F_goal.p.y() - m*F_goal.p.x();
+
+        /* La ec. de la circunferencia de radio ld centrada en base_link será ld_x² + ld_y² = ld² 
+        sustituimos la ld_y de la ec de la recta en la ec de la circunf obteniendo una ecuacion
+        cuadratica para ld_x con los siguientes terminos y solucion ld_x² = (-b +- sqrt(b² - 4ac))/2a */
+        double a = 1 + m * m; // 1+m²
+        double b = 2 * m * r_pfin; // 2*m*(y_pfin - m*x_pfin)
+        double c = r_pfin * r_pfin - _ld * _ld; // (y_pfin - m*x_pfin)² - ld²
+        double D = sqrt(b*b - 4*a*c); 
+        double ld_x = (-b + copysign(D,_velocity)) / (2*a);
+        double ld_y = m * ld_x + r_pfin; // ld_y = m*(ld_x - x_pfin) + y_pfin
+
+        /* Modifico los parametros del vector de posicion y del de rotacion de la tf de la lookahead */
+        _tfLookahead.transform.translation.x = ld_x;
+        _tfLookahead.transform.translation.y = ld_y;
+        _tfLookahead.transform.translation.z = F_goal.p.z();
+        F_goal.M.GetQuaternion(_tfLookahead.transform.rotation.x,
+                               _tfLookahead.transform.rotation.y,
+                               _tfLookahead.transform.rotation.z,
+                               _tfLookahead.transform.rotation.w);
+
+    }
+
+    // void PPControl::timerCallback(const ros::TimerEvent& event){
         
-    }
+    // }
 
-    geometry_msgs::PoseStamped PPControl::getPose(){
+    // geometry_msgs::PoseStamped PPControl::getPose(){
 
-        geometry_msgs::PoseStamped tfPose;
+    //     geometry_msgs::PoseStamped tfPose;
 
-        // Intentamos transformar la pose actual al frame_id del path
-        try {
-            // La pose transformada tendra ya dicho frame_id
-		    _tfListener.transformPose(_pathFrameid, _cPose, tfPose);
-        }
+    //     // Intentamos transformar la pose actual al frame_id del path
+    //     try {
+    //         // La pose transformada tendra ya dicho frame_id
+	// 	    _tfListener.transformPose(_pathFrameid, _cPose, tfPose);
+    //     }
 
-        // Si falla lanzamos una excepcion
-        catch (tf::TransformException& exception) {
-            ROS_ERROR_STREAM("Error en PPControl::getPose: " << 
-            exception.what());
-        }
+    //     // Si falla lanzamos una excepcion
+    //     catch (tf::TransformException& exception) {
+    //         ROS_ERROR_STREAM("Error en PPControl::getPose: " << 
+    //         exception.what());
+    //     }
 
-        return tfPose;
-    }
+    //     return tfPose;
+    // }
 
 
-    double PPControl::getPoseDist(const geometry_msgs::PoseStamped& pose){
+    // double PPControl::getPoseDist(const geometry_msgs::PoseStamped& pose){
 
-        geometry_msgs::PoseStamped origen = getPose();
-        geometry_msgs::PoseStamped tfPose; 
+    //     geometry_msgs::PoseStamped origen = getPose();
+    //     geometry_msgs::PoseStamped tfPose; 
 
-        // Intentamos transformar la pose que recibe como argumento al frame_id del path
-        try {
-            // La pose transformada tendra ya dicho frame_id
-		    _tfListener.transformPose(_pathFrameid, _cPose, tfPose);
-        }
+    //     // Intentamos transformar la pose que recibe como argumento al frame_id del path
+    //     try {
+    //         // La pose transformada tendra ya dicho frame_id
+	// 	    _tfListener.transformPose(_pathFrameid, _cPose, tfPose);
+    //     }
 
-        // Si falla lanzamos una excepcion
-        catch (tf::TransformException& exception) {
-            ROS_ERROR_STREAM("Error en PPControl::getPoseDist: " << 
-            exception.what());
-            return -1;
-        }
+    //     // Si falla lanzamos una excepcion
+    //     catch (tf::TransformException& exception) {
+    //         ROS_ERROR_STREAM("Error en PPControl::getPoseDist: " << 
+    //         exception.what());
+    //         return -1;
+    //     }
 
-        /* Calculamos la distancia desde la pose origen (la actual) hasta
-           la pose que acabamos de transformar mediante vectores que contienen
-           las coordenadas (x,y,z) de cada pose */  
-        tf::Vector3 org(origen.pose.position.x, origen.pose.position.y, origen.pose.position.z);
-        tf::Vector3 dest(tfPose.pose.position.x,tfPose.pose.position.y, tfPose.pose.position.z);
+    //     /* Calculamos la distancia desde la pose origen (la actual) hasta
+    //        la pose que acabamos de transformar mediante vectores que contienen
+    //        las coordenadas (x,y,z) de cada pose */  
+    //     tf::Vector3 org(origen.pose.position.x, origen.pose.position.y, origen.pose.position.z);
+    //     tf::Vector3 dest(tfPose.pose.position.x,tfPose.pose.position.y, tfPose.pose.position.z);
 
-        return tf::tfDistance(org,dest);
-    }
+    //     return tf::tfDistance(org,dest);
+    // }
 
 
