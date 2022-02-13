@@ -54,6 +54,7 @@
         if (path.header.frame_id==_mapFrameid){
             _cpath = path;
             _pathFrameid = path.header.frame_id;
+            std::cout << "_pathFrameid: " << _pathFrameid << std::endl;
             _pathlength = path.poses.size();
             _cpathFinalPose = path.poses.back().pose;
             _nextWP = 0;
@@ -80,11 +81,14 @@
         // _cPose.pose=odom.pose.pose;
         // // Guardo la velocidad actual dada por la odometría
         // _cVel=odom.twist.twist;
-
+        std::cout << "frames odom: " << odom.header.frame_id << odom.child_frame_id << std::endl;
         /* En vez de usar la odometria directamente se trabajara con el arbol de tfs */
-        
+        std::cout << "Entrando a getTF_BLMap" << std::endl;
         _tf_BLMap = getTF_BLMap();
+        std::cout << "frames de _tf_BLMap: " << _tf_BLMap.header.frame_id << _tf_BLMap.child_frame_id << std::endl;
+        std::cout << "Entrando a getWaypoint" << std::endl;
         int wp = getWayPoint();
+        std::cout << "waypoint: " << wp << std::endl;
 
         /* Si el path no esta vacio y el waypoint obtenido sobrepasa los limites de tamaño del path 
         significa que no se ha encontrado ningun wp cuya distancia con respecto al robot sea mayor
@@ -93,6 +97,7 @@
         if (!_cpath.poses.empty() && wp >= _pathlength){
 
             /* La pose de la meta la paso del frame map al frame BL */
+            std::cout << "pose de la meta" << std::endl;
             KDL::Frame F_goal_BL = getFrame_MapBL(_cpathFinalPose);
             geometry_msgs::Pose pose_goal_BL = tf2::toMsg(F_goal_BL);
 
@@ -114,6 +119,7 @@
 
             /* Calculamos el error lateral que viene siendo la coordenada Y del punto lookahead
              en el frame de base_link */
+            std::cout << "frames lookahead: " << _tfLookahead.header.frame_id << " " << _tfLookahead.child_frame_id << std::endl;
             double error_lat = _tfLookahead.transform.translation.y;
 
             /* Calculamos la velocidad angular cuya formula ha seguido el siguiente desarrollo: 
@@ -121,19 +127,23 @@
             viene dada por k = 2*sin(alpha)/ld. Sustituyendo el seno del error en el de la curvatura
             podemos obtener que k = (2*e)/ ld². Por tanto, w = v/R = v*k = (2*v*e) / ld² . */
             double w = (2 * _velocity * error_lat)/ (_ld*_ld);
+            std::cout << "w: " << w << std::endl;
 
             /* La velocidad angular que publiquemos sera el minimo entre la calculada y una w maxima predefinida */
             _cmdVel.angular.z = std::min(w, _w_max);
 
             /* Establecemos la velocidad linear con la que avanzara el robot */
             _cmdVel.linear.x = _velocity;
+            std::cout << "_velocity" << _velocity << std::endl;
         }
 
         /* Si en cambio se ha llegado a la meta pararemos el robot y resetearemos el punto del lookahead */
         else{
-            
+            std::cout << "reseteo: " << std::endl;
             _tfLookahead.transform = geometry_msgs::Transform();
             _tfLookahead.transform.rotation.w = 1.0;
+            _tfLookahead.header.frame_id = _robotFrameid;
+            _tfLookahead.child_frame_id = _ldFrameid;
 
             _cmdVel.linear.x = 0.0;
             _cmdVel.angular.z = 0.0;
