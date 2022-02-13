@@ -146,8 +146,6 @@ class PPControl {
 
         /* Mensaje que contendra las velocidades linear y angular que seran publicadas */
         geometry_msgs::Twist _cmdVel;
-
-        // geometry_msgs::PoseStamped _cPose;
 };
 
 #endif
