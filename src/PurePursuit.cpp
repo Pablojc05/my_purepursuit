@@ -4,7 +4,7 @@
 
     // Constructor
     PPControl::PPControl(ros::NodeHandle& nh):
-     _nh("~"), _nextWP(0), _meta(true), _velmax(0.1), _velocity(_velmax), _tfListener(_tfBuffer){
+     _nh("~"), _nextWP(0), _meta(true), _velmax(0.1), _velocity(0.1), _tfListener(_tfBuffer){
         getParameters();
     }
 
@@ -29,6 +29,8 @@
 
         _tfLookahead.header.frame_id = _robotFrameid;
         _tfLookahead.child_frame_id = _ldFrameid;
+
+        std::cout << "_velocity" << _velocity << std::endl;
         
         /* Inicializo los suscriptores y el publicador */
         _pathSub = _nh.subscribe(_pathTopic,1,&PPControl::getPath,this);
@@ -117,6 +119,8 @@
         hacia el siguiente waypoint */
         if (!_meta){
 
+            _velocity = copysign(_velmax, _velocity);
+
             /* Calculamos el error lateral que viene siendo la coordenada Y del punto lookahead
              en el frame de base_link */
             std::cout << "frames lookahead: " << _tfLookahead.header.frame_id << " " << _tfLookahead.child_frame_id << std::endl;
@@ -140,10 +144,13 @@
         /* Si en cambio se ha llegado a la meta pararemos el robot y resetearemos el punto del lookahead */
         else{
             std::cout << "reseteo: " << std::endl;
+            std::cout << "frames lookahead antes del reseteo: " << _tfLookahead.header.frame_id << " " << _tfLookahead.child_frame_id << std::endl;
             _tfLookahead.transform = geometry_msgs::Transform();
             _tfLookahead.transform.rotation.w = 1.0;
+            std::cout << "frames lookahead despues del reseteo: " << _tfLookahead.header.frame_id << " " << _tfLookahead.child_frame_id << std::endl;
             _tfLookahead.header.frame_id = _robotFrameid;
             _tfLookahead.child_frame_id = _ldFrameid;
+            std::cout << "frames lookahead despues de establecer los frames: " << _tfLookahead.header.frame_id << " " << _tfLookahead.child_frame_id << std::endl;
 
             _cmdVel.linear.x = 0.0;
             _cmdVel.angular.z = 0.0;
@@ -194,10 +201,11 @@
 
         geometry_msgs::Vector3 pos_robot = _tf_BLMap.transform.translation;
         int next_wp = 0;
+        int i;
 
         /* Recorro todos los elementos del path y aquel cuya distancia con respecto a la pose
         del robot sea mayor que la distancia del lookahead será el siguiente waypoint al que llegar */
-        for (int i=0; i < _cpath.poses.size(); i++){
+        for (i=0; i < _pathlength; i++){
             geometry_msgs::Point pos_wp = _cpath.poses[i].pose.position;
             
             if (getDistance(pos_wp, pos_robot) > _ld){
@@ -206,10 +214,13 @@
                 para luego poder medir el error lateral */
                 KDL::Frame F_lookahead_BL = getFrame_MapBL(_cpath.poses[i].pose);
                 _tfLookahead = tf2::kdlToTransform(F_lookahead_BL);
+                _tfLookahead.header.frame_id = _robotFrameid;
+                _tfLookahead.child_frame_id = _ldFrameid;
 
                 break;
             }
         }
+        next_wp = i;
         return next_wp;
     }
 
