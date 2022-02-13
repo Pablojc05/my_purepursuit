@@ -77,7 +77,7 @@
         /* En vez de usar la odometria directamente se trabajara con el arbol de tfs */
         _tf_BLMap = getTF_BLMap();
         int wp = getWayPoint();
-        std::cout << "waypoint: " << wp << std::endl;
+        // std::cout << "waypoint: " << wp << std::endl;
 
         /* Si el path no esta vacio y el waypoint obtenido sobrepasa los limites de tamaño del path 
         significa que no se ha encontrado ningun wp cuya distancia con respecto al robot sea mayor
@@ -91,10 +91,10 @@
 
             /* Si la posicion de la meta es menor que una determinada tolerancia medida en el eje x del robot,
             significara que hemos llegado a nuestro destino y reseteamos el path */
-            std::cout << "posicion en x de la meta: " << pose_goal_BL.position.x << std::endl;
-            std::cout << "posicion en y de la meta: " << pose_goal_BL.position.y << std::endl;
             if (fabs(pose_goal_BL.position.x) <= _posTolerance){
                 _meta = true;
+                std::cout << "posicion en x de la meta: " << pose_goal_BL.position.x << std::endl;
+                std::cout << "posicion en y de la meta: " << pose_goal_BL.position.y << std::endl;
                 _cpath = nav_msgs::Path();
             }
             /* Si no se ha llegado modificamos la tf del lookahead para que apunte al wp obtenido*/ 
@@ -182,8 +182,8 @@
 
         geometry_msgs::Vector3 pos_robot = _tf_BLMap.transform.translation;
 
-        /* Recorro todos los elementos del path y aquel cuya distancia con respecto a la pose
-        del robot sea mayor que la distancia del lookahead será el siguiente waypoint al que llegar */
+        /* Recorro todos los elementos del path (partiendo desde el wp actual) y aquel cuya distancia con respecto
+        a la pose del robot sea mayor que la distancia del lookahead será el siguiente waypoint al que llegar */
         for (; _nextWP < _cpath.poses.size(); _nextWP++){
             geometry_msgs::Point pos_wp = _cpath.poses[_nextWP].pose.position;
             
