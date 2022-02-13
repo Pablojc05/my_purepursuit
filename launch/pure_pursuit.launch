@@ -1,6 +1,6 @@
 <launch>
 
-<param name="/use_sim_time" value="true"/>
+<!-- <param name="/use_sim_time" value="true"/> -->
 
 <node pkg="pure_pursuit" type="pure_pursuit_node" name="pure_pursuit_node" output="screen">
     <param name="distancia_lookahead" value="1.0" />
@@ -8,7 +8,7 @@
     <param name="tolerancia_posicion" value="0.1" />
     <param name="path_topic" value="/move_base/SBPLLatticePlanner/plan" />
     <param name="odom_topic" value="/steer_bot/odom" />
-    <param name="cmdVel_topic" value="/purepursuit/cmd_vel" />
+    <param name="cmdVel_topic" value="/steer_bot/ackermann_steering_controller/cmd_vel" />
     <param name="map_frameid" value="map" />
     <param name="robot_frameid" value="base_link" />
     <param name="lookahead_frameid" value="lookahead" />
